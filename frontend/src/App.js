@@ -1,53 +1,70 @@
-import { useEffect } from "react";
+import React, { Suspense, lazy } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import { Toaster } from "sonner";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
+import FloatingWhatsApp from "@/components/layout/FloatingWhatsApp";
+import ScrollToTop from "@/components/layout/ScrollToTop";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const Home = lazy(() => import("@/pages/Home"));
+const About = lazy(() => import("@/pages/About"));
+const Categories = lazy(() => import("@/pages/Categories"));
+const CategoryDetail = lazy(() => import("@/pages/CategoryDetail"));
+const Collections = lazy(() => import("@/pages/Collections"));
+const CollectionDetail = lazy(() => import("@/pages/CollectionDetail"));
+const Products = lazy(() => import("@/pages/Products"));
+const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
+const Wholesale = lazy(() => import("@/pages/Wholesale"));
+const Dealer = lazy(() => import("@/pages/Dealer"));
+const Gallery = lazy(() => import("@/pages/Gallery"));
+const Blogs = lazy(() => import("@/pages/Blogs"));
+const BlogDetail = lazy(() => import("@/pages/BlogDetail"));
+const Faqs = lazy(() => import("@/pages/Faqs"));
+const Contact = lazy(() => import("@/pages/Contact"));
+const Privacy = lazy(() => import("@/pages/Privacy"));
+const Terms = lazy(() => import("@/pages/Terms"));
+const NotFound = lazy(() => import("@/pages/NotFound"));
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
+const Loader = () => (
+  <div className="container-wodmin py-24 text-center text-brand-mocha" data-testid="route-loader">
+    Loading…
+  </div>
+);
 
 function App() {
   return (
-    <div className="App">
+    <div className="App min-h-screen bg-brand-cream">
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
+        <ScrollToTop />
+        <Header />
+        <main>
+          <Suspense fallback={<Loader />}>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/categories" element={<Categories />} />
+              <Route path="/category/:slug" element={<CategoryDetail />} />
+              <Route path="/collections" element={<Collections />} />
+              <Route path="/collection/:slug" element={<CollectionDetail />} />
+              <Route path="/products" element={<Products />} />
+              <Route path="/product/:slug" element={<ProductDetail />} />
+              <Route path="/wholesale" element={<Wholesale />} />
+              <Route path="/dealer" element={<Dealer />} />
+              <Route path="/gallery" element={<Gallery />} />
+              <Route path="/blogs" element={<Blogs />} />
+              <Route path="/blog/:slug" element={<BlogDetail />} />
+              <Route path="/faqs" element={<Faqs />} />
+              <Route path="/contact" element={<Contact />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </main>
+        <Footer />
+        <FloatingWhatsApp />
+        <Toaster richColors position="top-right" />
       </BrowserRouter>
     </div>
   );

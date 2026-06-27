@@ -1,0 +1,36 @@
+{
+  "summary": "Comprehensive backend + frontend testing for WODMIN catalogue/enquiry MVP. Backend: 31/31 pytest tests passed for all catalogue, content and enquiry endpoints. Frontend: home, product list+detail, wholesale, dealer, contact, callback, newsletter, mobile menu, mega menu, search toggle, gallery, blogs, FAQs, privacy/terms, and 404 all working. Forms submit successfully with toasts shown. One data-quality issue found: several seeded categories don't map to any products (0 results on /category/...), notably 'bedroom' (2 products only because products use 'beds'), and 'budget-collection', 'new-arrivals', 'premium-essentials', 'value-collection' have 0 products.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Category page → product list", "issue": "Several seeded categories return 0 products because product.category_slug values differ from category.slug. Examples: /category/bedroom shows 2 products (products use slug 'beds'); /category/budget-collection, /category/new-arrivals, /category/premium-essentials, /category/value-collection all return 0 products. Either map these to filter flags (is_budget, is_new_arrival) on the category page, or align seed data so every category slug actually has products tagged with that slug.", "affected_selectors": ["a[href*='/category/']", "product-card-*"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_wodmin_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix category-vs-product slug mismatch in seed_data.py: ensure every category.slug has at least a few products with matching product.category_slug. Special 'virtual' categories (budget-collection, new-arrivals, premium-essentials, value-collection) should resolve to flag-based filters (is_budget=true / is_new_arrival=true) instead of category_slug equality.",
+    "Optional: also re-seed 'bedroom' products or rename the bedroom category slug to 'beds' (or merge the two)."
+  ],
+  "critical_code_review_comments": [
+    "server.py @api_router.get('/products/{slug}') matches against any string — `/products/featured` works only because it is declared before the slug route. Order is correct currently; do not reorder.",
+    "Use of `dict.copy()` before insert_many in startup seeding is good (avoids Motor mutating docs with _id), but the single-insert endpoints already pass a copy too, leaving the dict with its own keys untouched — confirmed responses don't leak _id.",
+    "EnquiryIn allows source default 'product' but extra='ignore' silently drops unknown fields — fine for MVP, but consider validation logging when an unexpected payload arrives.",
+    "Seed data alignment: categories collection should logically be the source of truth for valid product.category_slug values. Add a startup integrity check (warn-only) that flags categories with 0 products."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "~97% (1 content/data integration issue)"},
+  "test_credentials": "n/a — no auth in this iteration",
+  "seed_data_creation": "Used backend's own auto-seed (already executed at startup). Test data created: enquiries, wholesale-enquiries, dealer-applications, callback-requests, newsletter entries — all TEST_ prefixed.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest suite at /app/backend/tests/test_wodmin_api.py (31 tests) — re-run after seed fix to ensure no regression. The category-slug mismatch is the only meaningful issue; once seed_data.py is updated to align product.category_slug with category.slug, re-test by clicking each of the 25 category cards and verifying products are listed. Also worth verifying mega-menu links route correctly and that 'budget-collection'-style virtual categories now use is_budget/is_new_arrival query params.",
+  "rca of the issue": "Root cause: /app/backend/seed_data.py generates products with a category_slug pool (e.g., 'beds', 'sofas', 'tv-units') that does not include several category-collection slugs (e.g., 'bedroom', 'budget-collection', 'new-arrivals', 'premium-essentials', 'value-collection'). The frontend category page calls /api/products?category={slug} which strictly matches product.category_slug. Mitigation: (a) make virtual categories pass is_budget/is_new_arrival/etc. instead of category=…; (b) extend seed data so every category slug has >=3 products."
+}
