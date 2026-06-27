@@ -76,12 +76,10 @@ export default function Dashboard() {
           {(data?.products_by_category || []).map((row) => {
             const max = Math.max(...(data.products_by_category.map((x) => x.count)));
             const pct = Math.round((row.count / max) * 100);
-            return (
-              <div key={row._id}>
-                <div className="flex justify-between text-sm"><span className="text-brand-walnut">{row._id}</span><span className="text-brand-mocha">{row.count}</span></div>
+            return <div key={row.category}>
+                <div className="flex justify-between text-sm"><span className="text-brand-walnut">{row.category}</span><span className="text-brand-mocha">{row.count}</span></div>
                 <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-brand-sand"><div className="h-full bg-brand-terracotta" style={{ width: `${pct}%` }} /></div>
-              </div>
-            );
+              </div>;
           })}
         </div>
       </div>

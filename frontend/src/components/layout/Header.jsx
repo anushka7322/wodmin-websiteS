@@ -25,6 +25,7 @@ export default function Header() {
   const [megaCats, setMegaCats] = useState([]);
   const [megaOpen, setMegaOpen] = useState(false);
   const navigate = useNavigate();
+  const { wishlist = [], compare = [] } = useStorage() || {};
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);

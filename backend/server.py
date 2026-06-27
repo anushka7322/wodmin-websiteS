@@ -6,11 +6,11 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Annotated, List, Optional
 from xml.sax.saxutils import escape as xml_escape
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Query, Response
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -490,43 +490,38 @@ async def admin_delete_product(pid: str, admin: dict = Depends(require_admin)):
     return {"deleted": pid}
 
 
-# ---------- Generic admin CRUD factory for simple collections ----------
-def _register_simple_crud(name: str, coll: str, write_model: type[BaseModel], slug_field: Optional[str] = None):
-    """Mounts list/get-by-id/create/update/delete admin endpoints."""
+# ---------- Generic helpers (no Body parameter) ----------
+async def _generic_list(coll: str):
+    return await db[coll].find({}, {"_id": 0}).to_list(1000)
 
-    @api_router.get(f"/admin/{name}")
-    async def _list(admin: dict = Depends(require_admin)):
-        items = await db[coll].find({}, {"_id": 0}).to_list(1000)
-        return items
 
-    @api_router.post(f"/admin/{name}")
-    async def _create(payload: write_model, admin: dict = Depends(require_admin)):  # type: ignore[valid-type]
-        doc = payload.model_dump()
-        doc["id"] = str(uuid.uuid4())
-        if slug_field and not doc.get(slug_field):
-            doc[slug_field] = _slugify(doc.get("name") or doc.get("title") or doc["id"])
-        doc["created_at"] = _now_iso()
-        await db[coll].insert_one(doc.copy())
-        doc.pop("_id", None)
-        return doc
+async def _generic_delete(coll: str, item_id: str):
+    res = await db[coll].delete_one({"id": item_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Not found")
+    return {"deleted": item_id}
 
-    @api_router.put(f"/admin/{name}/{{item_id}}")
-    async def _update(item_id: str, payload: write_model, admin: dict = Depends(require_admin)):  # type: ignore[valid-type]
-        update = payload.model_dump()
-        if slug_field and not update.get(slug_field):
-            update[slug_field] = _slugify(update.get("name") or update.get("title") or item_id)
-        update["updated_at"] = _now_iso()
-        res = await db[coll].update_one({"id": item_id}, {"$set": update})
-        if res.matched_count == 0:
-            raise HTTPException(404, "Not found")
-        return await db[coll].find_one({"id": item_id}, {"_id": 0})
 
-    @api_router.delete(f"/admin/{name}/{{item_id}}")
-    async def _delete(item_id: str, admin: dict = Depends(require_admin)):
-        res = await db[coll].delete_one({"id": item_id})
-        if res.deleted_count == 0:
-            raise HTTPException(404, "Not found")
-        return {"deleted": item_id}
+async def _generic_create(coll: str, payload: BaseModel, slug_field: Optional[str] = None):
+    doc = payload.model_dump()
+    doc["id"] = str(uuid.uuid4())
+    if slug_field and not doc.get(slug_field):
+        doc[slug_field] = _slugify(doc.get("name") or doc.get("title") or doc["id"])
+    doc["created_at"] = _now_iso()
+    await db[coll].insert_one(doc.copy())
+    doc.pop("_id", None)
+    return doc
+
+
+async def _generic_update(coll: str, item_id: str, payload: BaseModel, slug_field: Optional[str] = None):
+    update = payload.model_dump()
+    if slug_field and not update.get(slug_field):
+        update[slug_field] = _slugify(update.get("name") or update.get("title") or item_id)
+    update["updated_at"] = _now_iso()
+    res = await db[coll].update_one({"id": item_id}, {"$set": update})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Not found")
+    return await db[coll].find_one({"id": item_id}, {"_id": 0})
 
 
 class CategoryWrite(BaseModel):
@@ -591,12 +586,125 @@ class BannerWrite(BaseModel):
     active: bool = True
 
 
-_register_simple_crud("categories", "categories", CategoryWrite, slug_field="slug")
-_register_simple_crud("collections", "collections_meta", CollectionWrite, slug_field="slug")
-_register_simple_crud("blogs", "blogs", BlogWrite, slug_field="slug")
-_register_simple_crud("testimonials", "testimonials", TestimonialWrite)
-_register_simple_crud("faqs", "faqs", FaqWrite)
-_register_simple_crud("gallery", "gallery", GalleryWrite)
+# ---------- Removed legacy factory; explicit endpoints below ----------
+@api_router.get("/admin/categories")
+async def admin_list_categories(admin: dict = Depends(require_admin)):
+    return await _generic_list("categories")
+
+
+@api_router.post("/admin/categories")
+async def admin_create_category(payload: CategoryWrite, admin: dict = Depends(require_admin)):
+    return await _generic_create("categories", payload, slug_field="slug")
+
+
+@api_router.put("/admin/categories/{item_id}")
+async def admin_update_category(item_id: str, payload: CategoryWrite, admin: dict = Depends(require_admin)):
+    return await _generic_update("categories", item_id, payload, slug_field="slug")
+
+
+@api_router.delete("/admin/categories/{item_id}")
+async def admin_delete_category(item_id: str, admin: dict = Depends(require_admin)):
+    return await _generic_delete("categories", item_id)
+
+
+@api_router.get("/admin/collections")
+async def admin_list_collections(admin: dict = Depends(require_admin)):
+    return await _generic_list("collections_meta")
+
+
+@api_router.post("/admin/collections")
+async def admin_create_collection(payload: CollectionWrite, admin: dict = Depends(require_admin)):
+    return await _generic_create("collections_meta", payload, slug_field="slug")
+
+
+@api_router.put("/admin/collections/{item_id}")
+async def admin_update_collection(item_id: str, payload: CollectionWrite, admin: dict = Depends(require_admin)):
+    return await _generic_update("collections_meta", item_id, payload, slug_field="slug")
+
+
+@api_router.delete("/admin/collections/{item_id}")
+async def admin_delete_collection(item_id: str, admin: dict = Depends(require_admin)):
+    return await _generic_delete("collections_meta", item_id)
+
+
+@api_router.get("/admin/blogs")
+async def admin_list_blogs(admin: dict = Depends(require_admin)):
+    return await _generic_list("blogs")
+
+
+@api_router.post("/admin/blogs")
+async def admin_create_blog(payload: BlogWrite, admin: dict = Depends(require_admin)):
+    return await _generic_create("blogs", payload, slug_field="slug")
+
+
+@api_router.put("/admin/blogs/{item_id}")
+async def admin_update_blog(item_id: str, payload: BlogWrite, admin: dict = Depends(require_admin)):
+    return await _generic_update("blogs", item_id, payload, slug_field="slug")
+
+
+@api_router.delete("/admin/blogs/{item_id}")
+async def admin_delete_blog(item_id: str, admin: dict = Depends(require_admin)):
+    return await _generic_delete("blogs", item_id)
+
+
+@api_router.get("/admin/testimonials")
+async def admin_list_testimonials(admin: dict = Depends(require_admin)):
+    return await _generic_list("testimonials")
+
+
+@api_router.post("/admin/testimonials")
+async def admin_create_testimonial(payload: TestimonialWrite, admin: dict = Depends(require_admin)):
+    return await _generic_create("testimonials", payload)
+
+
+@api_router.put("/admin/testimonials/{item_id}")
+async def admin_update_testimonial(item_id: str, payload: TestimonialWrite, admin: dict = Depends(require_admin)):
+    return await _generic_update("testimonials", item_id, payload)
+
+
+@api_router.delete("/admin/testimonials/{item_id}")
+async def admin_delete_testimonial(item_id: str, admin: dict = Depends(require_admin)):
+    return await _generic_delete("testimonials", item_id)
+
+
+@api_router.get("/admin/faqs")
+async def admin_list_faqs(admin: dict = Depends(require_admin)):
+    return await _generic_list("faqs")
+
+
+@api_router.post("/admin/faqs")
+async def admin_create_faq(payload: FaqWrite, admin: dict = Depends(require_admin)):
+    return await _generic_create("faqs", payload)
+
+
+@api_router.put("/admin/faqs/{item_id}")
+async def admin_update_faq(item_id: str, payload: FaqWrite, admin: dict = Depends(require_admin)):
+    return await _generic_update("faqs", item_id, payload)
+
+
+@api_router.delete("/admin/faqs/{item_id}")
+async def admin_delete_faq(item_id: str, admin: dict = Depends(require_admin)):
+    return await _generic_delete("faqs", item_id)
+
+
+@api_router.get("/admin/gallery")
+async def admin_list_gallery(admin: dict = Depends(require_admin)):
+    return await _generic_list("gallery")
+
+
+@api_router.post("/admin/gallery")
+async def admin_create_gallery(payload: GalleryWrite, admin: dict = Depends(require_admin)):
+    return await _generic_create("gallery", payload)
+
+
+@api_router.put("/admin/gallery/{item_id}")
+async def admin_update_gallery(item_id: str, payload: GalleryWrite, admin: dict = Depends(require_admin)):
+    return await _generic_update("gallery", item_id, payload)
+
+
+@api_router.delete("/admin/gallery/{item_id}")
+async def admin_delete_gallery(item_id: str, admin: dict = Depends(require_admin)):
+    return await _generic_delete("gallery", item_id)
 
 
 @api_router.put("/admin/banner")
@@ -690,16 +798,17 @@ async def admin_analytics(admin: dict = Depends(require_admin)):
         {"$group": {"_id": "$category_name", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
         {"$limit": 8},
+        {"$project": {"_id": 0, "category": "$_id", "count": 1}},
     ]).to_list(8)
     return {"counts": counts, "recent_enquiries": recent_enquiries, "products_by_category": by_category}
 
 
 # ---------- SEO: sitemap.xml & robots.txt ----------
-@app.get("/sitemap.xml", include_in_schema=False)
-async def sitemap_xml():
-    base = os.environ.get("PUBLIC_URL", "").rstrip("/")
-    if not base:
-        base = "https://wodmin.in"
+PUBLIC_DIR = Path(__file__).resolve().parent.parent / "frontend" / "public"
+
+
+async def _build_sitemap_xml() -> str:
+    base = os.environ.get("PUBLIC_URL", "https://wodmin.in").rstrip("/")
     static_paths = [
         "/", "/about", "/categories", "/collections", "/products",
         "/wholesale", "/dealer", "/gallery", "/blogs", "/faqs",
@@ -714,26 +823,43 @@ async def sitemap_xml():
         urls.append(f"/product/{p['slug']}")
     for b in await db.blogs.find({}, {"_id": 0, "slug": 1}).to_list(200):
         urls.append(f"/blog/{b['slug']}")
-
     today = datetime.now(timezone.utc).date().isoformat()
     body = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     for u in urls:
         body.append(f"  <url><loc>{xml_escape(base + u)}</loc><lastmod>{today}</lastmod></url>")
     body.append("</urlset>")
-    return Response(content="\n".join(body), media_type="application/xml")
+    return "\n".join(body)
 
 
-@app.get("/robots.txt", include_in_schema=False)
-async def robots_txt():
+def _build_robots_txt() -> str:
     base = os.environ.get("PUBLIC_URL", "https://wodmin.in").rstrip("/")
-    body = "\n".join([
+    return "\n".join([
         "User-agent: *",
         "Allow: /",
         "Disallow: /admin",
         f"Sitemap: {base}/sitemap.xml",
         "",
     ])
-    return PlainTextResponse(body)
+
+
+@api_router.get("/sitemap.xml")
+async def api_sitemap_xml():
+    return Response(content=await _build_sitemap_xml(), media_type="application/xml")
+
+
+@api_router.get("/robots.txt")
+async def api_robots_txt():
+    return PlainTextResponse(_build_robots_txt())
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml():
+    return Response(content=await _build_sitemap_xml(), media_type="application/xml")
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    return PlainTextResponse(_build_robots_txt())
 
 
 # ---------- Mount router & middleware ----------
@@ -780,6 +906,15 @@ async def on_startup():
         logger.info("Catalogue seed complete.")
     await seed_admin(db)
     logger.info("Admin seeding done.")
+    # Emit static sitemap.xml & robots.txt into the CRA public dir so they're
+    # reachable through the public ingress (which only routes /api/* to backend).
+    try:
+        PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
+        (PUBLIC_DIR / "sitemap.xml").write_text(await _build_sitemap_xml(), encoding="utf-8")
+        (PUBLIC_DIR / "robots.txt").write_text(_build_robots_txt(), encoding="utf-8")
+        logger.info("Wrote static sitemap.xml + robots.txt to %s", PUBLIC_DIR)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not write static SEO files: %s", e)
 
 
 @app.on_event("shutdown")
