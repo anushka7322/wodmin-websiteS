@@ -3,12 +3,22 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import ProductGrid from "@/components/product/ProductGrid";
 
+// Slugs that aren't direct category mappings — they filter by product flags.
+const VIRTUAL_CATEGORY_FILTERS = {
+  "new-arrivals": { is_new_arrival: true },
+  "budget-collection": { is_budget: true },
+  "value-collection": { is_budget: true },
+  "premium-essentials": { is_best_seller: true },
+};
+
 export default function CategoryDetail() {
   const { slug } = useParams();
   const [cat, setCat] = useState(null);
   useEffect(() => { api.get(`/categories/${slug}`).then((r) => setCat(r.data)).catch(() => setCat({notFound:true})); }, [slug]);
 
   if (cat?.notFound) return <div className="container-wodmin py-20 text-center">Category not found. <Link className="text-brand-terracotta" to="/categories">View all →</Link></div>;
+
+  const virtual = VIRTUAL_CATEGORY_FILTERS[slug];
 
   return (
     <div data-testid="category-detail">
@@ -30,7 +40,11 @@ export default function CategoryDetail() {
           </div>
         </div>
       </section>
-      <ProductGrid fixedCategory={slug} />
+      {virtual ? (
+        <ProductGrid fixedFilters={virtual} />
+      ) : (
+        <ProductGrid fixedCategory={slug} />
+      )}
     </div>
   );
 }

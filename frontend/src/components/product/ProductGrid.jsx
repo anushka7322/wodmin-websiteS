@@ -12,7 +12,7 @@ const SORTS = [
   { v: "rating", l: "Top Rated" },
 ];
 
-export default function ProductGrid({ fixedCategory, fixedCollection, title }) {
+export default function ProductGrid({ fixedCategory, fixedCollection, fixedFilters, title }) {
   const [params, setParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -39,6 +39,7 @@ export default function ProductGrid({ fixedCategory, fixedCollection, title }) {
       limit: 60,
       ...(fixedCategory ? { category: fixedCategory } : {}),
       ...(fixedCollection ? { collection: fixedCollection } : {}),
+      ...(fixedFilters || {}),
       ...(q ? { q } : {}),
       ...(material ? { material } : {}),
       ...(colour ? { colour } : {}),
@@ -49,7 +50,7 @@ export default function ProductGrid({ fixedCategory, fixedCollection, title }) {
     api.get("/products", { params: query })
       .then((r) => { setItems(r.data.items); setTotal(r.data.total); })
       .finally(() => setLoading(false));
-  }, [fixedCategory, fixedCollection, q, material, colour, minPrice, maxPrice, sort, inStock]);
+  }, [fixedCategory, fixedCollection, fixedFilters, q, material, colour, minPrice, maxPrice, sort, inStock]);
 
   const setParam = (k, v) => {
     const next = new URLSearchParams(params);

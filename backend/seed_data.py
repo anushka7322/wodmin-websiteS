@@ -250,6 +250,11 @@ PRODUCT_BLUEPRINTS = [
     ("Topaz Side Table", "coffee-tables", 2999, ["Engineered Wood"], "coffee_table"),
     ("Ruby Storage Ottoman", "storage", 4999, ["Engineered Wood", "Fabric"], "storage"),
     ("Onyx Shoe Rack 4-Tier", "storage", 3999, ["Engineered Wood"], "storage"),
+    ("Cherry Bedside Table", "bedroom", 4299, ["Engineered Wood"], "bedroom"),
+    ("Walnut 3-Drawer Dresser", "bedroom", 14999, ["Engineered Wood"], "bedroom"),
+    ("Pine Vanity Mirror", "bedroom", 5499, ["Engineered Wood", "Mirror"], "bedroom"),
+    ("Ash Bedroom Bench", "bedroom", 6999, ["Solid Wood"], "bedroom"),
+    ("Snowflake Dressing Table", "bedroom", 11999, ["Engineered Wood", "Mirror"], "bedroom"),
 ]
 
 
