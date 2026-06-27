@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, Search, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, formatINR } from "@/lib/api";
+import ImageUploader from "@/components/admin/ImageUploader";
 
 const EMPTY = {
   name: "", slug: "", sku: "", category_slug: "", price: 0, mrp: 0,
@@ -145,8 +146,12 @@ export default function AdminProducts() {
               <Field label="Dimensions"><input className={inputCls} value={form.dimensions} onChange={(e) => setForm({...form, dimensions: e.target.value})} /></Field>
               <Field label="Weight (kg)"><input type="number" className={inputCls} value={form.weight_kg} onChange={(e) => setForm({...form, weight_kg: e.target.value})} /></Field>
               <Field label="Warranty"><input className={inputCls} value={form.warranty} onChange={(e) => setForm({...form, warranty: e.target.value})} /></Field>
-              <Field label="Main image URL"><input className={inputCls} value={form.main_image || ""} onChange={(e) => setForm({...form, main_image: e.target.value})} /></Field>
-              <Field label="Gallery images (comma-separated URLs)" full><input className={inputCls} value={(form.images || []).join(", ")} onChange={(e) => setForm({...form, images: splitList(e.target.value)})} /></Field>
+              <Field label="Main image" full>
+                <ImageUploader value={form.main_image} onChange={(v) => setForm({...form, main_image: v})} />
+              </Field>
+              <Field label="Gallery images" full>
+                <ImageUploader multiple value={form.images} onChange={(v) => setForm({...form, images: v, main_image: form.main_image || v[0] || ""})} />
+              </Field>
               <Field label="Materials (comma-separated)" full><input className={inputCls} value={(form.materials || []).join(", ")} onChange={(e) => setForm({...form, materials: splitList(e.target.value)})} /></Field>
               <Field label="Colours (comma-separated)" full><input className={inputCls} value={(form.colours || []).join(", ")} onChange={(e) => setForm({...form, colours: splitList(e.target.value)})} /></Field>
               <Field label="Sizes (comma-separated)" full><input className={inputCls} value={(form.sizes || []).join(", ")} onChange={(e) => setForm({...form, sizes: splitList(e.target.value)})} /></Field>

@@ -10,7 +10,7 @@ from typing import Annotated, List, Optional
 from xml.sax.saxutils import escape as xml_escape
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, FastAPI, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -31,6 +31,7 @@ from auth import (  # noqa: E402
 )
 from pdf_utils import build_catalogue_pdf, build_product_pdf  # noqa: E402
 from seed_data import seed_all  # noqa: E402
+from storage import MAX_BYTES, MIME_BY_EXT, build_upload_path, get_object, init_storage, put_object  # noqa: E402
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
@@ -586,6 +587,77 @@ class BannerWrite(BaseModel):
     active: bool = True
 
 
+# ---------- Admin: file uploads ----------
+async def _save_upload(file: UploadFile) -> dict:
+    if not file.filename:
+        raise HTTPException(400, "Empty filename")
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    try:
+        path = build_upload_path(ext)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    content = await file.read()
+    if len(content) > MAX_BYTES:
+        raise HTTPException(413, f"File too large (>{MAX_BYTES // (1024*1024)} MB)")
+    content_type = file.content_type or MIME_BY_EXT.get(ext, "application/octet-stream")
+    try:
+        result = put_object(path, content, content_type)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Storage upload failed: {e}")
+    stored_path = result.get("path", path)
+    # Track in DB
+    record = {
+        "id": str(uuid.uuid4()),
+        "storage_path": stored_path,
+        "original_filename": file.filename,
+        "content_type": content_type,
+        "size": result.get("size", len(content)),
+        "is_deleted": False,
+        "created_at": _now_iso(),
+    }
+    await db.files.insert_one(record.copy())
+    base = os.environ.get("PUBLIC_URL", "").rstrip("/")
+    relative = f"/api/files/{stored_path}"
+    return {
+        "id": record["id"],
+        "url": (base + relative) if base else relative,
+        "path": stored_path,
+        "size": record["size"],
+        "content_type": content_type,
+        "original_filename": file.filename,
+    }
+
+
+@api_router.post("/admin/uploads")
+async def admin_upload(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    return await _save_upload(file)
+
+
+@api_router.post("/admin/uploads/bulk")
+async def admin_upload_bulk(files: List[UploadFile] = File(...), admin: dict = Depends(require_admin)):
+    results = []
+    for f in files:
+        results.append(await _save_upload(f))
+    return {"items": results}
+
+
+@api_router.get("/files/{path:path}")
+async def serve_file(path: str):
+    """Public proxy for stored objects (product images are public)."""
+    record = await db.files.find_one({"storage_path": path, "is_deleted": False}, {"_id": 0})
+    if not record:
+        raise HTTPException(404, "File not found")
+    try:
+        data, content_type = get_object(path)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Storage read failed: {e}")
+    return Response(
+        content=data,
+        media_type=record.get("content_type", content_type),
+        headers={"Cache-Control": "public, max-age=31536000"},
+    )
+
+
 # ---------- Removed legacy factory; explicit endpoints below ----------
 @api_router.get("/admin/categories")
 async def admin_list_categories(admin: dict = Depends(require_admin)):
@@ -906,6 +978,7 @@ async def on_startup():
         logger.info("Catalogue seed complete.")
     await seed_admin(db)
     logger.info("Admin seeding done.")
+    init_storage()
     # Emit static sitemap.xml & robots.txt into the CRA public dir so they're
     # reachable through the public ingress (which only routes /api/* to backend).
     try:

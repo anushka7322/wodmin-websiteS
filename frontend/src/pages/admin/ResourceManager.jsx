@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import ImageUploader from "@/components/admin/ImageUploader";
 
 // Field schema per resource (rendered in modal)
 const SCHEMA = {
@@ -12,7 +13,7 @@ const SCHEMA = {
       { key: "name", label: "Name *", required: true },
       { key: "slug", label: "Slug", hint: "Auto-generated if empty" },
       { key: "description", label: "Description", type: "textarea" },
-      { key: "image", label: "Image URL" },
+      { key: "image", label: "Image", type: "image" },
     ],
   },
   collections: {
@@ -22,7 +23,7 @@ const SCHEMA = {
       { key: "name", label: "Name *", required: true },
       { key: "slug", label: "Slug" },
       { key: "description", label: "Description", type: "textarea" },
-      { key: "image", label: "Image URL" },
+      { key: "image", label: "Image", type: "image" },
     ],
   },
   blogs: {
@@ -35,7 +36,7 @@ const SCHEMA = {
       { key: "author", label: "Author" },
       { key: "excerpt", label: "Excerpt", type: "textarea" },
       { key: "content", label: "Content *", type: "textarea", required: true },
-      { key: "image", label: "Cover image URL" },
+      { key: "image", label: "Cover image", type: "image" },
       { key: "read_minutes", label: "Read minutes", type: "number" },
     ],
   },
@@ -66,7 +67,7 @@ const SCHEMA = {
     fields: [
       { key: "title", label: "Title *", required: true },
       { key: "category", label: "Category" },
-      { key: "image", label: "Image URL *", required: true },
+      { key: "image", label: "Image *", type: "image", required: true },
     ],
   },
 };
@@ -157,7 +158,9 @@ export default function ResourceManager({ resource }) {
                   <span className="font-semibold uppercase tracking-widest text-brand-mocha">{f.label}</span>
                   {f.hint && <span className="ml-2 text-brand-mocha normal-case tracking-normal">({f.hint})</span>}
                   <div className="mt-1">
-                    {f.type === "textarea" ? (
+                    {f.type === "image" ? (
+                      <ImageUploader value={form[f.key]} onChange={(v) => setForm({...form, [f.key]: v})} />
+                    ) : f.type === "textarea" ? (
                       <textarea className="w-full min-h-[120px] rounded-xl border border-brand-line bg-brand-cream px-3 py-2 text-sm" value={form[f.key] || ""} onChange={(e) => setForm({...form, [f.key]: e.target.value})} />
                     ) : (
                       <input type={f.type || "text"} className="w-full rounded-xl border border-brand-line bg-brand-cream px-3 py-2 text-sm" value={form[f.key] ?? ""} onChange={(e) => setForm({...form, [f.key]: e.target.value})} />
