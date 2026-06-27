@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
+import Seo, { blogJsonLd } from "@/lib/seo";
 
 export default function BlogDetail() {
   const { slug } = useParams();
@@ -11,6 +12,7 @@ export default function BlogDetail() {
   const b = data.blog;
   return (
     <article className="container-wodmin py-12 lg:py-16" data-testid="blog-detail">
+      <Seo title={b.title} description={b.excerpt} image={b.image} type="article" jsonLd={blogJsonLd(b)} />
       <nav className="text-xs text-brand-mocha"><Link to="/" className="hover:text-brand-terracotta">Home</Link> / <Link to="/blogs" className="hover:text-brand-terracotta">Blogs</Link> / {b.title}</nav>
       <header className="mx-auto mt-6 max-w-3xl">
         <span className="pill">{b.category}</span>

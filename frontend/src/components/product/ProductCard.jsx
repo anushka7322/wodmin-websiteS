@@ -1,11 +1,15 @@
 import { Link } from "react-router-dom";
-import { Phone, MessageCircle, ArrowUpRight } from "lucide-react";
+import { Phone, MessageCircle, ArrowUpRight, Heart, GitCompare } from "lucide-react";
 import { formatINR } from "@/lib/api";
 import { buildWhatsAppLink, CONTACT } from "@/lib/contact";
+import { useStorage } from "@/lib/storageContext";
 import { motion } from "framer-motion";
 
 export default function ProductCard({ product, index = 0 }) {
+  const { isWishlisted, isCompared, toggleWishlist, toggleCompare } = useStorage() || {};
   if (!product) return null;
+  const wished = isWishlisted?.(product.id);
+  const compared = isCompared?.(product.id);
   return (
     <motion.div
       initial={{ opacity: 0, y: 14 }}
@@ -29,10 +33,25 @@ export default function ProductCard({ product, index = 0 }) {
           {product.is_best_seller && <span className="pill">Best Seller</span>}
           {product.is_budget && <span className="rounded-full bg-brand-sage/15 px-3 py-1 text-xs font-medium text-brand-olive">Budget Pick</span>}
         </div>
-        <div className="absolute right-3 top-3 rounded-full bg-white/85 p-2 text-brand-walnut backdrop-blur opacity-0 transition-opacity group-hover:opacity-100">
-          <ArrowUpRight className="h-4 w-4" />
-        </div>
       </Link>
+      <div className="absolute right-5 top-5 flex flex-col gap-2">
+        <button
+          onClick={(e) => { e.preventDefault(); toggleWishlist?.(product.id); }}
+          aria-label="Toggle wishlist"
+          data-testid={`wishlist-${product.slug}`}
+          className={`rounded-full p-2 shadow-sm transition ${wished ? "bg-brand-terracotta text-white" : "bg-white/95 text-brand-walnut hover:text-brand-terracotta"}`}
+        >
+          <Heart className={`h-4 w-4 ${wished ? "fill-current" : ""}`} />
+        </button>
+        <button
+          onClick={(e) => { e.preventDefault(); toggleCompare?.(product.id); }}
+          aria-label="Toggle compare"
+          data-testid={`compare-${product.slug}`}
+          className={`rounded-full p-2 shadow-sm transition ${compared ? "bg-brand-walnut text-white" : "bg-white/95 text-brand-walnut hover:text-brand-terracotta"}`}
+        >
+          <GitCompare className="h-4 w-4" />
+        </button>
+      </div>
 
       <div className="mt-4 flex-1 px-1">
         <span className="text-[11px] font-medium uppercase tracking-widest text-brand-mocha">{product.category_name}</span>

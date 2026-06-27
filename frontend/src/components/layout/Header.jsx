@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Menu, X, Search, Phone, ChevronDown } from "lucide-react";
+import { Menu, X, Search, Phone, ChevronDown, Heart, GitCompare } from "lucide-react";
 import { BRAND, CONTACT } from "@/lib/contact";
 import { api } from "@/lib/api";
+import { useStorage } from "@/lib/storageContext";
 
 const NAV = [
   { to: "/", label: "Home" },
@@ -124,6 +125,18 @@ export default function Header() {
           >
             <Search className="h-5 w-5" />
           </button>
+          <Link to="/compare" aria-label="Compare" data-testid="header-compare-link" className="relative rounded-full p-2 text-brand-walnut hover:bg-brand-sand transition-colors">
+            <GitCompare className="h-5 w-5" />
+            {compare.length > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-walnut px-1 text-[10px] font-semibold text-white">{compare.length}</span>
+            )}
+          </Link>
+          <Link to="/wishlist" aria-label="Wishlist" data-testid="header-wishlist-link" className="relative rounded-full p-2 text-brand-walnut hover:bg-brand-sand transition-colors">
+            <Heart className="h-5 w-5" />
+            {wishlist.length > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-terracotta px-1 text-[10px] font-semibold text-white">{wishlist.length}</span>
+            )}
+          </Link>
           <Link to="/contact" className="hidden md:inline-flex btn-primary" data-testid="header-enquire-btn">
             Enquire Now
           </Link>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { api } from "@/lib/api";
+import Seo, { faqJsonLd } from "@/lib/seo";
 
 export default function Faqs() {
   const [items, setItems] = useState([]);
@@ -9,6 +10,7 @@ export default function Faqs() {
   const cats = ["all", "general", "delivery", "warranty", "payments", "wholesale", "customisation", "materials", "products", "orders", "services"];
   return (
     <div className="container-wodmin py-12 lg:py-16" data-testid="faqs-page">
+      <Seo title="Frequently Asked Questions" description="All your questions about WODMIN furniture, delivery, warranty, dealers and wholesale — answered." jsonLd={items.length ? faqJsonLd(items) : undefined} />
       <header className="max-w-3xl">
         <span className="eyebrow">FAQs</span>
         <h1 className="mt-2 font-display text-4xl text-brand-walnut sm:text-5xl">Frequently asked questions.</h1>

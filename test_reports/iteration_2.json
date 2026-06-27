@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 2 testing of WODMIN admin/SEO/PDF/wishlist features. Backend: 35/44 new tests passed. Critical: (1) admin generic CRUD POST/PUT for categories/collections/blogs/testimonials/faqs/gallery returns 422 because the dynamic Pydantic model annotation is treated as a query parameter by FastAPI; (2) /sitemap.xml and /robots.txt are served correctly by FastAPI on port 8001 but the public ingress only routes /api/* to the backend, so https://<host>/sitemap.xml and /robots.txt actually hit the React frontend and return HTML. Frontend: CRITICAL — the public site is completely blank (homepage, PDP, wishlist, compare all empty body). React throws 'compare is not defined' / 'wishlist is not defined' in <Header>: storageContext.useStorage is imported but never called in Header.jsx (line 6 import, no destructure inside the component). The Admin dashboard (which uses AdminLayout, not Header) is unaffected and works: login, dashboard with stats (304 products), products list, navigation, banner, enquiries pipeline all render. catalogue.pdf (6.8MB) and per-product .pdf both work via /api. by-ids preserves order. /api/admin/login wrong-password returns 401, /api/admin/me returns admin, JWT bearer auth is enforced on every /api/admin/* route tested.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST/PUT /api/admin/{categories|collections|blogs|testimonials|faqs|gallery}", "issue": "Returns 422 'Field required (query.payload)'. Root cause: _register_simple_crud factory in server.py:494 annotates the body as `payload: write_model` where write_model is a function-local type variable. FastAPI cannot introspect this as a BaseModel subclass so it defaults to a query parameter. Fix: use Body(...) explicitly, or use Annotated[write_model, Body()], or define the endpoints non-generically. This blocks all ResourceManager create/edit in the admin UI for 6 resources.", "priority": "CRITICAL"},
+      {"endpoint": "GET /sitemap.xml and /robots.txt (no /api prefix)", "issue": "Backend serves these correctly on port 8001, but the kubernetes ingress only routes /api/* to the backend; all other paths go to the React frontend (CRA dev server). Result: https://<host>/sitemap.xml returns React HTML (status 200, Content-Type text/html). SEO crawlers see HTML, not XML. Mitigation options: (a) move endpoints under /api (e.g., /api/sitemap.xml) and add CRA proxy/redirect, (b) emit static sitemap.xml/robots.txt into /app/frontend/public at build/seed time, (c) add ingress rules for these two paths.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/catalogue.pdf", "issue": "Takes ~11s and 6.8MB. In parallel test runs it intermittently 502s (likely ingress idle/header timeout). Consider caching the PDF (regenerate only on catalogue change) and/or streaming."},
+      {"endpoint": "GET /api/admin/analytics", "issue": "products_by_category aggregation returns objects with `_id` field (Mongo $group key). Not a real ObjectId but leaks internal field name; rename to {category, count} via $project for cleanliness."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Header.jsx", "issue": "useStorage hook imported but never invoked inside the component. References to `wishlist` and `compare` (lines 130/131/136/137) throw ReferenceError, which bubbles up and renders the entire public site as a blank page (homepage, product detail, wishlist, compare, FAQs, blogs all blank).  Fix: add `const { wishlist, compare } = useStorage();` inside the Header function body.", "selector": "<Header>", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Admin ResourceManager (Categories/Collections/Blogs/Testimonials/FAQs/Gallery) — Save new/edit", "issue": "Backend rejects with 422; UI form save silently fails or shows generic error. Caused by backend issue above.", "affected_selectors": ["[data-testid^=\"new-\"]", "button:has-text(\"Save\")"]},
+      {"flow": "Public site SEO + wishlist/compare/PDF + recently viewed + JSON-LD verification", "issue": "Could not verify any of these because the Header crash takes down the SPA; once Header is fixed all these flows need re-test.", "affected_selectors": ["[data-testid=\"header-wishlist-link\"]", "[data-testid=\"header-compare-link\"]", "[data-testid=\"pdp-wishlist-btn\"]", "[data-testid=\"pdp-compare-btn\"]", "[data-testid=\"download-catalogue\"]", "[data-testid=\"download-spec\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_admin_seo_pdf.py",
+    "/app/backend/tests/test_wodmin_api.py",
+    "/app/test_reports/pytest/iteration_2_admin.xml"
+  ],
+  "action_items": [
+    "Fix Header.jsx: add `const { wishlist, compare } = useStorage();` inside the function — restores entire public site.",
+    "Fix _register_simple_crud in /app/backend/server.py:494 — use `payload: write_model = Body(...)` or `Annotated[write_model, Body()]` so FastAPI treats the dynamic Pydantic model as a body, not query. Re-run tests to confirm all 6 resources accept POST/PUT.",
+    "Make /sitemap.xml and /robots.txt reachable via the public URL (move to /api prefix and add a CRA proxy, or emit static files into /app/frontend/public on seed).",
+    "Verify SEO JSON-LD blocks render the expected @type (Organization/Product/FAQPage/Article) once Header crash is fixed — this could not be tested in this iteration.",
+    "Cache /api/catalogue.pdf so it isn't regenerated for every request (≈11s, 6.8MB)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:494 — generic CRUD factory using a function-local type as the Pydantic body annotation is the root cause of the 422s. FastAPI's dependency analysis cannot detect a BaseModel subclass through a closed-over name in this position; switch to `Body(...)` or `Annotated[write_model, Body()]`.",
+    "server.py:689 — db.products.aggregate $group leaks `_id` (the group key) in the response; project to `{category, count}`.",
+    "Header.jsx:6 — imports a hook and assumes destructured names exist in scope; classic React/JS hoisting trap. Add a lint rule (eslint react-hooks/exhaustive-deps + no-undef) or build-time check.",
+    "Server-rendered sitemap.xml/robots.txt at app.get('/sitemap.xml') will never be served through this preview ingress; the project should not assume non-/api FastAPI routes are reachable publicly.",
+    "Admin login UI doesn't visibly throttle/lockout; auth playbook calls for brute-force lockout after 5 fails (not implemented). Acceptable for MVP, flag for next iteration.",
+    "/api/admin/* list endpoints return `{items, total}` for enquiries/wholesale/dealers/callbacks/newsletter but a raw list for categories/blogs/etc. Inconsistent shape will likely cause subtle UI bugs."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_admin_seo_pdf.py (new — iteration 2 admin/SEO/PDF tests)"
+  ],
+  "success_rate": {"backend": "79% (35/44 new tests; old 31/31 from iteration 1 still pass)", "frontend": "~30% — admin console works; entire public site blank due to Header crash"},
+  "test_credentials": "admin@wodmin.in / WodminAdmin@2026 — verified working via /api/admin/login (200) and via /admin/login UI (token persisted in localStorage key 'wodmin_admin_token').",
+  "seed_data_creation": "Tests create TEST_ prefixed product and enquiry entries and clean up via DELETE; admin resource CRUD tests fail at POST so no residual TEST_ rows for those collections.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After main agent fixes (1) Header.jsx useStorage destructure and (2) _register_simple_crud Body annotation, re-run /app/backend/tests/test_admin_seo_pdf.py and re-do the frontend smoke test (wishlist/compare/PDF download/JSON-LD types per route). Use product slug 'helsinki-l-shaped-sofa' for PDP testing (the 'wodmin-preview' slug referenced in the request spec does not exist; treat it as a placeholder for any product slug). Note the sitemap/robots routing limitation — those will keep failing through the public URL until routed differently.",
+  "rca of the issue": "Two independent root causes. (A) Header.jsx: storageContext.useStorage hook is imported but never invoked; references to wishlist/compare throw ReferenceError, React bubbles the error past the public layout (no error boundary at PublicShell), so the SPA renders nothing for all public routes. The admin layout uses AdminLayout instead of Header so /admin is unaffected. (B) server.py _register_simple_crud: FastAPI signature inspection cannot detect that a closure-captured variable (write_model) is a Pydantic BaseModel subclass; falling back to Query() makes the endpoint require ?payload=... and rejects JSON body with 422. Mitigation: wrap the annotation with Body(...) or Annotated[write_model, Body()]. Sitemap/robots: ingress rule scope limited to /api/* sub-paths — backend's app.get('/sitemap.xml') is unreachable through the public URL; either move under /api or pre-generate static files."
+}

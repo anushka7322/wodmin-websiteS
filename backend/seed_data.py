@@ -300,64 +300,76 @@ def build_products(categories: list[dict], collections: list[dict]) -> list[dict
     cat_by_slug = {c["slug"]: c for c in categories}
     out = []
     random.seed(42)
-    for idx, (name, cat_slug, price, mats, type_tag) in enumerate(PRODUCT_BLUEPRINTS):
+    # Variant finishes to expand catalogue to ~300 products
+    VARIANTS = [
+        ("", 1.00, 0),          # base
+        ("Walnut Edition", 1.08, 100),
+        ("Honey Oak Edition", 1.05, 50),
+        ("Wenge Edition", 1.12, 150),
+    ]
+    idx = 0
+    for (name, cat_slug, price, mats, type_tag) in PRODUCT_BLUEPRINTS:
         cat = cat_by_slug.get(cat_slug) or random.choice(categories)
         imgs = IMG.get(type_tag, IMG["living_room"])
-        gallery = random.sample(imgs, k=min(len(imgs), 3))
-        colours = random.sample(COLOURS, k=random.randint(2, 4))
-        sizes = random.sample(SIZES, k=random.randint(1, 3))
-        mrp = int(price * random.uniform(1.18, 1.45))
-        is_best = idx % 5 == 0
-        is_new = idx % 4 == 1
-        is_budget = price <= 9999
-        coll_tags = []
-        if is_budget:
-            coll_tags.append("budget-saver")
-        if idx % 3 == 0 and len(collections) > 0:
-            coll_tags.append(collections[idx % len(collections)]["slug"])
-        out.append({
-            "id": str(uuid.uuid4()),
-            "name": name,
-            "slug": _category_slug(name),
-            "sku": f"WD-{1000 + idx}",
-            "category_id": cat["id"],
-            "category_slug": cat["slug"],
-            "category_name": cat["name"],
-            "price": price,
-            "mrp": mrp,
-            "discount_pct": int(round((1 - price / mrp) * 100)),
-            "currency": "INR",
-            "short_description": f"{name} crafted by WODMIN — modern silhouette, family-friendly build, easy maintenance.",
-            "description": (
-                f"Meet the {name}. Designed and assembled in India, the piece blends practical proportions "
-                f"with a contemporary look. Built using {', '.join(mats).lower()}, it's engineered for "
-                f"everyday durability while keeping things affordable. Perfect for Indian homes, apartments and small offices."
-            ),
-            "materials": mats,
-            "colours": colours,
-            "sizes": sizes,
-            "dimensions": f"{random.randint(80, 220)} x {random.randint(60, 180)} x {random.randint(40, 110)} cm",
-            "weight_kg": round(random.uniform(8, 95), 1),
-            "warranty": f"{random.choice([1, 2, 3, 5])} year warranty",
-            "care_instructions": [
-                "Wipe regularly with a soft dry cloth",
-                "Avoid direct sunlight and water spills",
-                "Use coasters for hot or wet items",
-                "Tighten fittings every 6 months",
-            ],
-            "delivery_info": "Free delivery & assembly in 7-12 working days across major Indian cities.",
-            "images": gallery,
-            "main_image": gallery[0],
-            "is_best_seller": is_best,
-            "is_new_arrival": is_new,
-            "is_budget": is_budget,
-            "collection_slugs": coll_tags,
-            "rating": round(random.uniform(4.1, 4.9), 1),
-            "review_count": random.randint(12, 480),
-            "stock_status": "Made to Order" if idx % 7 == 0 else "In Stock",
-            "tags": [type_tag, cat["slug"]],
-            "created_at": _now(),
-        })
+        for v_label, v_mult, v_add in VARIANTS:
+            final_name = f"{name} — {v_label}" if v_label else name
+            gallery = random.sample(imgs, k=min(len(imgs), 3))
+            colours = random.sample(COLOURS, k=random.randint(2, 4))
+            sizes = random.sample(SIZES, k=random.randint(1, 3))
+            v_price = int(price * v_mult) + v_add
+            mrp = int(v_price * random.uniform(1.18, 1.45))
+            is_best = idx % 5 == 0
+            is_new = idx % 4 == 1
+            is_budget = v_price <= 9999
+            coll_tags = []
+            if is_budget:
+                coll_tags.append("budget-saver")
+            if idx % 3 == 0 and len(collections) > 0:
+                coll_tags.append(collections[idx % len(collections)]["slug"])
+            out.append({
+                "id": str(uuid.uuid4()),
+                "name": final_name,
+                "slug": _category_slug(final_name),
+                "sku": f"WD-{1000 + idx}",
+                "category_id": cat["id"],
+                "category_slug": cat["slug"],
+                "category_name": cat["name"],
+                "price": v_price,
+                "mrp": mrp,
+                "discount_pct": int(round((1 - v_price / mrp) * 100)),
+                "currency": "INR",
+                "short_description": f"{final_name} crafted by WODMIN — modern silhouette, family-friendly build, easy maintenance.",
+                "description": (
+                    f"Meet the {final_name}. Designed and assembled in India, the piece blends practical proportions "
+                    f"with a contemporary look. Built using {', '.join(mats).lower()}, it's engineered for "
+                    f"everyday durability while keeping things affordable. Perfect for Indian homes, apartments and small offices."
+                ),
+                "materials": mats,
+                "colours": colours,
+                "sizes": sizes,
+                "dimensions": f"{random.randint(80, 220)} x {random.randint(60, 180)} x {random.randint(40, 110)} cm",
+                "weight_kg": round(random.uniform(8, 95), 1),
+                "warranty": f"{random.choice([1, 2, 3, 5])} year warranty",
+                "care_instructions": [
+                    "Wipe regularly with a soft dry cloth",
+                    "Avoid direct sunlight and water spills",
+                    "Use coasters for hot or wet items",
+                    "Tighten fittings every 6 months",
+                ],
+                "delivery_info": "Free delivery & assembly in 7-12 working days across major Indian cities.",
+                "images": gallery,
+                "main_image": gallery[0],
+                "is_best_seller": is_best,
+                "is_new_arrival": is_new,
+                "is_budget": is_budget,
+                "collection_slugs": coll_tags,
+                "rating": round(random.uniform(4.1, 4.9), 1),
+                "review_count": random.randint(12, 480),
+                "stock_status": "Made to Order" if idx % 7 == 0 else "In Stock",
+                "tags": [type_tag, cat["slug"]],
+                "created_at": _now(),
+            })
+            idx += 1
     return out
 
 

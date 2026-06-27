@@ -1,4 +1,4 @@
-"""WODMIN backend — catalogue, content and enquiry capture API."""
+"""WODMIN backend — catalogue, content, enquiry capture, admin & SEO endpoints."""
 from __future__ import annotations
 
 import logging
@@ -7,31 +7,42 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
+from xml.sax.saxutils import escape as xml_escape
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 
-from seed_data import seed_all
-
-
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
+
+# Imports that may read env at import time go below load_dotenv()
+from auth import (  # noqa: E402
+    AdminLogin,
+    AdminPublic,
+    LoginResponse,
+    create_access_token,
+    get_admin_dependency,
+    seed_admin,
+    verify_password,
+)
+from pdf_utils import build_catalogue_pdf, build_product_pdf  # noqa: E402
+from seed_data import seed_all  # noqa: E402
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
-app = FastAPI(title="WODMIN API", version="1.0.0")
+app = FastAPI(title="WODMIN API", version="2.0.0")
 api_router = APIRouter(prefix="/api")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("wodmin")
+
+require_admin = get_admin_dependency(db)
 
 
 # ---------- helpers ----------
@@ -39,7 +50,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _strip_id(doc: dict) -> dict:
+def _strip_id(doc):
     if not doc:
         return doc
     doc.pop("_id", None)
@@ -57,7 +68,7 @@ class EnquiryIn(BaseModel):
     product_id: Optional[str] = None
     product_name: Optional[str] = None
     category_slug: Optional[str] = None
-    source: Optional[str] = "product"  # product / general / quick
+    source: Optional[str] = "product"
 
 
 class EnquiryOut(EnquiryIn):
@@ -72,7 +83,7 @@ class WholesaleEnquiryIn(BaseModel):
     phone: str
     email: Optional[EmailStr] = None
     company: str
-    business_type: str  # builder, hotel, school, restaurant, corporate, other
+    business_type: str
     city: str
     estimated_quantity: Optional[str] = None
     message: Optional[str] = None
@@ -121,7 +132,7 @@ class NewsletterIn(BaseModel):
     email: EmailStr
 
 
-# ---------- Catalogue endpoints ----------
+# ---------- Public catalogue endpoints ----------
 @api_router.get("/")
 async def root():
     return {"name": "WODMIN API", "status": "ok", "time": _now_iso()}
@@ -129,8 +140,7 @@ async def root():
 
 @api_router.get("/categories")
 async def list_categories():
-    docs = await db.categories.find({}, {"_id": 0}).sort("name", 1).to_list(200)
-    return docs
+    return await db.categories.find({}, {"_id": 0}).sort("name", 1).to_list(200)
 
 
 @api_router.get("/categories/{slug}")
@@ -143,8 +153,7 @@ async def get_category(slug: str):
 
 @api_router.get("/collections")
 async def list_collections():
-    docs = await db.collections_meta.find({}, {"_id": 0}).sort("name", 1).to_list(200)
-    return docs
+    return await db.collections_meta.find({}, {"_id": 0}).sort("name", 1).to_list(200)
 
 
 @api_router.get("/collections/{slug}")
@@ -168,7 +177,7 @@ async def list_products(
     is_best_seller: Optional[bool] = None,
     is_new_arrival: Optional[bool] = None,
     is_budget: Optional[bool] = None,
-    sort: str = "popular",  # popular, price_asc, price_desc, newest, rating
+    sort: str = "popular",
     limit: int = Query(24, le=200),
     skip: int = 0,
 ):
@@ -211,7 +220,6 @@ async def list_products(
         "popular": [("review_count", -1)],
     }
     sort_spec = sort_map.get(sort, sort_map["popular"])
-
     cursor = db.products.find(where, {"_id": 0}).sort(sort_spec).skip(skip).limit(limit)
     items = await cursor.to_list(limit)
     total = await db.products.count_documents(where)
@@ -226,30 +234,59 @@ async def featured_products():
     return {"best_sellers": best, "new_arrivals": new, "budget": budget}
 
 
+@api_router.get("/products/by-ids")
+async def products_by_ids(ids: str):
+    """Comma-separated list of product ids — used for wishlist/compare/recently viewed."""
+    id_list = [i.strip() for i in ids.split(",") if i.strip()]
+    if not id_list:
+        return []
+    docs = await db.products.find({"id": {"$in": id_list}}, {"_id": 0}).to_list(len(id_list))
+    by_id = {d["id"]: d for d in docs}
+    return [by_id[i] for i in id_list if i in by_id]
+
+
 @api_router.get("/products/{slug}")
 async def get_product(slug: str):
     doc = await db.products.find_one({"slug": slug}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Product not found")
-    # related products from same category
     related = (
-        await db.products.find(
-            {"category_slug": doc["category_slug"], "slug": {"$ne": slug}},
-            {"_id": 0},
-        )
+        await db.products.find({"category_slug": doc["category_slug"], "slug": {"$ne": slug}}, {"_id": 0})
         .limit(8)
         .to_list(8)
     )
     return {"product": doc, "related": related}
 
 
+@api_router.get("/products/{slug}/pdf")
+async def product_pdf(slug: str):
+    doc = await db.products.find_one({"slug": slug}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Product not found")
+    pdf_bytes = build_product_pdf(doc)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="WODMIN-{slug}.pdf"'},
+    )
+
+
+@api_router.get("/catalogue.pdf")
+async def catalogue_pdf():
+    docs = await db.products.find({}, {"_id": 0}).limit(150).to_list(150)
+    pdf_bytes = build_catalogue_pdf(docs)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="WODMIN-Catalogue-2026.pdf"'},
+    )
+
+
 @api_router.get("/filters")
 async def filter_options():
     materials = await db.products.distinct("materials")
     colours = await db.products.distinct("colours")
-    prices = await db.products.aggregate(
-        [{"$group": {"_id": None, "min": {"$min": "$price"}, "max": {"$max": "$price"}}}]
-    ).to_list(1)
+    prices = await db.products.aggregate([{"$group": {"_id": None, "min": {"$min": "$price"}, "max": {"$max": "$price"}}}]).to_list(1)
     p = prices[0] if prices else {"min": 0, "max": 100000}
     return {
         "materials": sorted([m for m in materials if m]),
@@ -262,13 +299,7 @@ async def filter_options():
 @api_router.get("/blogs")
 async def list_blogs(limit: int = 20, skip: int = 0, category: Optional[str] = None):
     where = {"category": category} if category else {}
-    items = (
-        await db.blogs.find(where, {"_id": 0})
-        .sort("published_at", -1)
-        .skip(skip)
-        .limit(limit)
-        .to_list(limit)
-    )
+    items = await db.blogs.find(where, {"_id": 0}).sort("published_at", -1).skip(skip).limit(limit).to_list(limit)
     total = await db.blogs.count_documents(where)
     return {"items": items, "total": total}
 
@@ -278,41 +309,44 @@ async def get_blog(slug: str):
     doc = await db.blogs.find_one({"slug": slug}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Blog not found")
-    related = (
-        await db.blogs.find({"slug": {"$ne": slug}}, {"_id": 0})
-        .sort("published_at", -1)
-        .limit(3)
-        .to_list(3)
-    )
+    related = await db.blogs.find({"slug": {"$ne": slug}}, {"_id": 0}).sort("published_at", -1).limit(3).to_list(3)
     return {"blog": doc, "related": related}
 
 
 @api_router.get("/testimonials")
 async def list_testimonials(limit: int = 24):
-    items = await db.testimonials.find({}, {"_id": 0}).limit(limit).to_list(limit)
-    return items
+    return await db.testimonials.find({}, {"_id": 0}).limit(limit).to_list(limit)
 
 
 @api_router.get("/faqs")
 async def list_faqs(category: Optional[str] = None):
     where = {"category": category} if category else {}
-    items = await db.faqs.find(where, {"_id": 0}).sort("order", 1).to_list(500)
-    return items
+    return await db.faqs.find(where, {"_id": 0}).sort("order", 1).to_list(500)
 
 
 @api_router.get("/gallery")
 async def list_gallery():
-    items = await db.gallery.find({}, {"_id": 0}).to_list(200)
-    return items
+    return await db.gallery.find({}, {"_id": 0}).to_list(200)
+
+
+@api_router.get("/banner")
+async def get_home_banner():
+    doc = await db.settings.find_one({"key": "home_banner"}, {"_id": 0})
+    return doc or {
+        "key": "home_banner",
+        "title": "Beautiful furniture, honestly priced",
+        "subtitle": "Modern Furniture for Every Home",
+        "cta_label": "Explore the catalogue",
+        "cta_link": "/categories",
+        "active": True,
+    }
 
 
 # ---------- Enquiry endpoints ----------
 @api_router.post("/enquiries", response_model=EnquiryOut)
 async def create_enquiry(data: EnquiryIn):
     doc = data.model_dump()
-    doc["id"] = str(uuid.uuid4())
-    doc["status"] = "new"
-    doc["created_at"] = _now_iso()
+    doc["id"] = str(uuid.uuid4()); doc["status"] = "new"; doc["created_at"] = _now_iso()
     await db.enquiries.insert_one(doc.copy())
     return EnquiryOut(**doc)
 
@@ -320,9 +354,7 @@ async def create_enquiry(data: EnquiryIn):
 @api_router.post("/wholesale-enquiries", response_model=WholesaleEnquiryOut)
 async def create_wholesale_enquiry(data: WholesaleEnquiryIn):
     doc = data.model_dump()
-    doc["id"] = str(uuid.uuid4())
-    doc["status"] = "new"
-    doc["created_at"] = _now_iso()
+    doc["id"] = str(uuid.uuid4()); doc["status"] = "new"; doc["created_at"] = _now_iso()
     await db.wholesale_enquiries.insert_one(doc.copy())
     return WholesaleEnquiryOut(**doc)
 
@@ -330,9 +362,7 @@ async def create_wholesale_enquiry(data: WholesaleEnquiryIn):
 @api_router.post("/dealer-applications", response_model=DealerApplicationOut)
 async def create_dealer_application(data: DealerApplicationIn):
     doc = data.model_dump()
-    doc["id"] = str(uuid.uuid4())
-    doc["status"] = "new"
-    doc["created_at"] = _now_iso()
+    doc["id"] = str(uuid.uuid4()); doc["status"] = "new"; doc["created_at"] = _now_iso()
     await db.dealer_applications.insert_one(doc.copy())
     return DealerApplicationOut(**doc)
 
@@ -340,9 +370,7 @@ async def create_dealer_application(data: DealerApplicationIn):
 @api_router.post("/callback-requests", response_model=CallbackRequestOut)
 async def create_callback(data: CallbackRequestIn):
     doc = data.model_dump()
-    doc["id"] = str(uuid.uuid4())
-    doc["status"] = "new"
-    doc["created_at"] = _now_iso()
+    doc["id"] = str(uuid.uuid4()); doc["status"] = "new"; doc["created_at"] = _now_iso()
     await db.callbacks.insert_one(doc.copy())
     return CallbackRequestOut(**doc)
 
@@ -352,15 +380,363 @@ async def newsletter_subscribe(data: NewsletterIn):
     existing = await db.newsletter.find_one({"email": data.email})
     if existing:
         return {"status": "already_subscribed"}
-    await db.newsletter.insert_one({
-        "id": str(uuid.uuid4()),
-        "email": data.email,
-        "created_at": _now_iso(),
-    })
+    await db.newsletter.insert_one({"id": str(uuid.uuid4()), "email": data.email, "created_at": _now_iso()})
     return {"status": "subscribed"}
 
 
-# ---------- include router ----------
+# ---------- Admin auth ----------
+@api_router.post("/admin/login", response_model=LoginResponse)
+async def admin_login(payload: AdminLogin):
+    email = payload.email.lower().strip()
+    user = await db.admin_users.find_one({"email": email})
+    if not user or not verify_password(payload.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_access_token(sub=user["id"], email=user["email"], role=user.get("role", "admin"))
+    return LoginResponse(
+        access_token=token,
+        token_type="bearer",
+        admin=AdminPublic(id=user["id"], email=user["email"], name=user.get("name", ""), role=user.get("role", "admin")),
+    )
+
+
+@api_router.get("/admin/me", response_model=AdminPublic)
+async def admin_me(admin: dict = Depends(require_admin)):
+    return AdminPublic(id=admin["id"], email=admin["email"], name=admin.get("name", ""), role=admin.get("role", "admin"))
+
+
+# ---------- Admin CRUD: products ----------
+class ProductWrite(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str
+    slug: Optional[str] = None
+    sku: Optional[str] = None
+    category_id: Optional[str] = None
+    category_slug: str
+    category_name: Optional[str] = None
+    price: int
+    mrp: Optional[int] = None
+    short_description: Optional[str] = ""
+    description: Optional[str] = ""
+    materials: List[str] = Field(default_factory=list)
+    colours: List[str] = Field(default_factory=list)
+    sizes: List[str] = Field(default_factory=list)
+    dimensions: Optional[str] = ""
+    weight_kg: Optional[float] = 0
+    warranty: Optional[str] = ""
+    care_instructions: List[str] = Field(default_factory=list)
+    delivery_info: Optional[str] = ""
+    images: List[str] = Field(default_factory=list)
+    main_image: Optional[str] = ""
+    is_best_seller: bool = False
+    is_new_arrival: bool = False
+    is_budget: bool = False
+    collection_slugs: List[str] = Field(default_factory=list)
+    stock_status: str = "In Stock"
+
+
+def _slugify(text: str) -> str:
+    return "".join(c if c.isalnum() else "-" for c in text.lower()).strip("-").replace("--", "-")
+
+
+@api_router.post("/admin/products")
+async def admin_create_product(data: ProductWrite, admin: dict = Depends(require_admin)):
+    cat = await db.categories.find_one({"slug": data.category_slug}, {"_id": 0})
+    if not cat:
+        raise HTTPException(400, "Unknown category_slug")
+    doc = data.model_dump()
+    doc["id"] = str(uuid.uuid4())
+    doc["slug"] = data.slug or _slugify(data.name)
+    doc["sku"] = data.sku or f"WD-{int(datetime.now().timestamp())%100000}"
+    doc["category_id"] = cat["id"]
+    doc["category_name"] = cat["name"]
+    doc["mrp"] = data.mrp or int(data.price * 1.3)
+    doc["discount_pct"] = max(0, int(round((1 - data.price / doc["mrp"]) * 100))) if doc["mrp"] else 0
+    doc["currency"] = "INR"
+    doc["main_image"] = data.main_image or (data.images[0] if data.images else "")
+    doc["rating"] = 4.6
+    doc["review_count"] = 0
+    doc["tags"] = [data.category_slug]
+    doc["created_at"] = _now_iso()
+    await db.products.insert_one(doc.copy())
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.put("/admin/products/{pid}")
+async def admin_update_product(pid: str, data: ProductWrite, admin: dict = Depends(require_admin)):
+    cat = await db.categories.find_one({"slug": data.category_slug}, {"_id": 0})
+    if not cat:
+        raise HTTPException(400, "Unknown category_slug")
+    update = data.model_dump()
+    update["slug"] = data.slug or _slugify(data.name)
+    update["category_id"] = cat["id"]
+    update["category_name"] = cat["name"]
+    update["mrp"] = data.mrp or int(data.price * 1.3)
+    update["discount_pct"] = max(0, int(round((1 - data.price / update["mrp"]) * 100))) if update["mrp"] else 0
+    update["main_image"] = data.main_image or (data.images[0] if data.images else "")
+    update["updated_at"] = _now_iso()
+    res = await db.products.update_one({"id": pid}, {"$set": update})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Product not found")
+    doc = await db.products.find_one({"id": pid}, {"_id": 0})
+    return doc
+
+
+@api_router.delete("/admin/products/{pid}")
+async def admin_delete_product(pid: str, admin: dict = Depends(require_admin)):
+    res = await db.products.delete_one({"id": pid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Product not found")
+    return {"deleted": pid}
+
+
+# ---------- Generic admin CRUD factory for simple collections ----------
+def _register_simple_crud(name: str, coll: str, write_model: type[BaseModel], slug_field: Optional[str] = None):
+    """Mounts list/get-by-id/create/update/delete admin endpoints."""
+
+    @api_router.get(f"/admin/{name}")
+    async def _list(admin: dict = Depends(require_admin)):
+        items = await db[coll].find({}, {"_id": 0}).to_list(1000)
+        return items
+
+    @api_router.post(f"/admin/{name}")
+    async def _create(payload: write_model, admin: dict = Depends(require_admin)):  # type: ignore[valid-type]
+        doc = payload.model_dump()
+        doc["id"] = str(uuid.uuid4())
+        if slug_field and not doc.get(slug_field):
+            doc[slug_field] = _slugify(doc.get("name") or doc.get("title") or doc["id"])
+        doc["created_at"] = _now_iso()
+        await db[coll].insert_one(doc.copy())
+        doc.pop("_id", None)
+        return doc
+
+    @api_router.put(f"/admin/{name}/{{item_id}}")
+    async def _update(item_id: str, payload: write_model, admin: dict = Depends(require_admin)):  # type: ignore[valid-type]
+        update = payload.model_dump()
+        if slug_field and not update.get(slug_field):
+            update[slug_field] = _slugify(update.get("name") or update.get("title") or item_id)
+        update["updated_at"] = _now_iso()
+        res = await db[coll].update_one({"id": item_id}, {"$set": update})
+        if res.matched_count == 0:
+            raise HTTPException(404, "Not found")
+        return await db[coll].find_one({"id": item_id}, {"_id": 0})
+
+    @api_router.delete(f"/admin/{name}/{{item_id}}")
+    async def _delete(item_id: str, admin: dict = Depends(require_admin)):
+        res = await db[coll].delete_one({"id": item_id})
+        if res.deleted_count == 0:
+            raise HTTPException(404, "Not found")
+        return {"deleted": item_id}
+
+
+class CategoryWrite(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str
+    slug: Optional[str] = None
+    description: Optional[str] = ""
+    image: Optional[str] = ""
+
+
+class CollectionWrite(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str
+    slug: Optional[str] = None
+    description: Optional[str] = ""
+    image: Optional[str] = ""
+
+
+class BlogWrite(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: str
+    slug: Optional[str] = None
+    category: str
+    excerpt: Optional[str] = ""
+    content: str
+    image: Optional[str] = ""
+    author: Optional[str] = "WODMIN Team"
+    published_at: Optional[str] = None
+    read_minutes: Optional[int] = 5
+
+
+class TestimonialWrite(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str
+    city: Optional[str] = ""
+    role: Optional[str] = ""
+    rating: int = 5
+    quote: str
+
+
+class FaqWrite(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    question: str
+    answer: str
+    category: str = "general"
+    order: int = 0
+
+
+class GalleryWrite(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: str
+    category: str = "Customer Home"
+    image: str
+
+
+class BannerWrite(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: str
+    subtitle: Optional[str] = ""
+    cta_label: Optional[str] = "Explore the catalogue"
+    cta_link: Optional[str] = "/categories"
+    active: bool = True
+
+
+_register_simple_crud("categories", "categories", CategoryWrite, slug_field="slug")
+_register_simple_crud("collections", "collections_meta", CollectionWrite, slug_field="slug")
+_register_simple_crud("blogs", "blogs", BlogWrite, slug_field="slug")
+_register_simple_crud("testimonials", "testimonials", TestimonialWrite)
+_register_simple_crud("faqs", "faqs", FaqWrite)
+_register_simple_crud("gallery", "gallery", GalleryWrite)
+
+
+@api_router.put("/admin/banner")
+async def admin_set_banner(payload: BannerWrite, admin: dict = Depends(require_admin)):
+    doc = payload.model_dump()
+    doc["key"] = "home_banner"
+    doc["updated_at"] = _now_iso()
+    await db.settings.update_one({"key": "home_banner"}, {"$set": doc}, upsert=True)
+    doc.pop("_id", None)
+    return doc
+
+
+# ---------- Admin: enquiries view & status ----------
+async def _list_with_status(coll: str, status: Optional[str], limit: int):
+    where = {"status": status} if status else {}
+    items = await db[coll].find(where, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    total = await db[coll].count_documents(where)
+    return {"items": items, "total": total}
+
+
+@api_router.get("/admin/enquiries")
+async def admin_enquiries(status: Optional[str] = None, limit: int = 200, admin: dict = Depends(require_admin)):
+    return await _list_with_status("enquiries", status, limit)
+
+
+@api_router.get("/admin/wholesale-enquiries")
+async def admin_wholesale(status: Optional[str] = None, limit: int = 200, admin: dict = Depends(require_admin)):
+    return await _list_with_status("wholesale_enquiries", status, limit)
+
+
+@api_router.get("/admin/dealer-applications")
+async def admin_dealers(status: Optional[str] = None, limit: int = 200, admin: dict = Depends(require_admin)):
+    return await _list_with_status("dealer_applications", status, limit)
+
+
+@api_router.get("/admin/callback-requests")
+async def admin_callbacks(status: Optional[str] = None, limit: int = 200, admin: dict = Depends(require_admin)):
+    return await _list_with_status("callbacks", status, limit)
+
+
+@api_router.get("/admin/newsletter")
+async def admin_newsletter(limit: int = 500, admin: dict = Depends(require_admin)):
+    items = await db.newsletter.find({}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    return {"items": items, "total": len(items)}
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+
+@api_router.patch("/admin/{coll_alias}/{item_id}/status")
+async def admin_update_status(coll_alias: str, item_id: str, payload: StatusUpdate, admin: dict = Depends(require_admin)):
+    alias_to_coll = {
+        "enquiries": "enquiries",
+        "wholesale-enquiries": "wholesale_enquiries",
+        "dealer-applications": "dealer_applications",
+        "callback-requests": "callbacks",
+    }
+    coll = alias_to_coll.get(coll_alias)
+    if not coll:
+        raise HTTPException(404, "Unknown collection")
+    res = await db[coll].update_one({"id": item_id}, {"$set": {"status": payload.status, "updated_at": _now_iso()}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Not found")
+    return {"id": item_id, "status": payload.status}
+
+
+@api_router.get("/admin/analytics")
+async def admin_analytics(admin: dict = Depends(require_admin)):
+    counts = {}
+    for label, coll in [
+        ("products", "products"),
+        ("categories", "categories"),
+        ("collections", "collections_meta"),
+        ("blogs", "blogs"),
+        ("testimonials", "testimonials"),
+        ("faqs", "faqs"),
+        ("gallery", "gallery"),
+        ("enquiries", "enquiries"),
+        ("wholesale_enquiries", "wholesale_enquiries"),
+        ("dealer_applications", "dealer_applications"),
+        ("callbacks", "callbacks"),
+        ("newsletter", "newsletter"),
+    ]:
+        counts[label] = await db[coll].count_documents({})
+    counts["new_enquiries"] = await db.enquiries.count_documents({"status": "new"})
+    counts["new_wholesale"] = await db.wholesale_enquiries.count_documents({"status": "new"})
+    counts["new_dealers"] = await db.dealer_applications.count_documents({"status": "new"})
+    recent_enquiries = await db.enquiries.find({}, {"_id": 0}).sort("created_at", -1).limit(8).to_list(8)
+    by_category = await db.products.aggregate([
+        {"$group": {"_id": "$category_name", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 8},
+    ]).to_list(8)
+    return {"counts": counts, "recent_enquiries": recent_enquiries, "products_by_category": by_category}
+
+
+# ---------- SEO: sitemap.xml & robots.txt ----------
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml():
+    base = os.environ.get("PUBLIC_URL", "").rstrip("/")
+    if not base:
+        base = "https://wodmin.in"
+    static_paths = [
+        "/", "/about", "/categories", "/collections", "/products",
+        "/wholesale", "/dealer", "/gallery", "/blogs", "/faqs",
+        "/contact", "/privacy", "/terms",
+    ]
+    urls = list(static_paths)
+    for c in await db.categories.find({}, {"_id": 0, "slug": 1}).to_list(200):
+        urls.append(f"/category/{c['slug']}")
+    for c in await db.collections_meta.find({}, {"_id": 0, "slug": 1}).to_list(200):
+        urls.append(f"/collection/{c['slug']}")
+    for p in await db.products.find({}, {"_id": 0, "slug": 1}).limit(2000).to_list(2000):
+        urls.append(f"/product/{p['slug']}")
+    for b in await db.blogs.find({}, {"_id": 0, "slug": 1}).to_list(200):
+        urls.append(f"/blog/{b['slug']}")
+
+    today = datetime.now(timezone.utc).date().isoformat()
+    body = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for u in urls:
+        body.append(f"  <url><loc>{xml_escape(base + u)}</loc><lastmod>{today}</lastmod></url>")
+    body.append("</urlset>")
+    return Response(content="\n".join(body), media_type="application/xml")
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    base = os.environ.get("PUBLIC_URL", "https://wodmin.in").rstrip("/")
+    body = "\n".join([
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /admin",
+        f"Sitemap: {base}/sitemap.xml",
+        "",
+    ])
+    return PlainTextResponse(body)
+
+
+# ---------- Mount router & middleware ----------
 app.include_router(api_router)
 
 app.add_middleware(
@@ -372,7 +748,7 @@ app.add_middleware(
 )
 
 
-# ---------- startup: seed data ----------
+# ---------- Startup: seed catalogue + admin ----------
 @app.on_event("startup")
 async def on_startup():
     counts = {
@@ -385,7 +761,7 @@ async def on_startup():
         "gallery": await db.gallery.count_documents({}),
     }
     if any(v == 0 for v in counts.values()):
-        logger.info("Seeding WODMIN sample data... existing counts: %s", counts)
+        logger.info("Seeding catalogue data... existing counts: %s", counts)
         data = seed_all()
         if counts["categories"] == 0:
             await db.categories.insert_many([d.copy() for d in data["categories"]])
@@ -401,9 +777,9 @@ async def on_startup():
             await db.faqs.insert_many([d.copy() for d in data["faqs"]])
         if counts["gallery"] == 0:
             await db.gallery.insert_many([d.copy() for d in data["gallery"]])
-        logger.info("Seed complete.")
-    else:
-        logger.info("Existing data present. Skipping seed.")
+        logger.info("Catalogue seed complete.")
+    await seed_admin(db)
+    logger.info("Admin seeding done.")
 
 
 @app.on_event("shutdown")

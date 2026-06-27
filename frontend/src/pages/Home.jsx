@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import ProductCard from "@/components/product/ProductCard";
 import EnquiryForm from "@/components/forms/EnquiryForm";
 import { BRAND, CONTACT, buildWhatsAppLink } from "@/lib/contact";
+import Seo, { orgJsonLd } from "@/lib/seo";
 
 const VALUES = [
   { icon: BadgePercent, title: "Up to 45% off MRP", desc: "Honest pricing direct from the brand. No showroom markup." },
@@ -39,6 +40,11 @@ export default function Home() {
 
   return (
     <div data-testid="home-page">
+      <Seo
+        title="Modern Furniture for Every Home"
+        description="Affordable, reliable and modern furniture for Indian homes, offices and businesses. Browse 300+ designs across 25 categories and enquire today."
+        jsonLd={orgJsonLd()}
+      />
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div className="container-wodmin grid items-center gap-10 py-12 lg:grid-cols-12 lg:py-20">

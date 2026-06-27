@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Phone, MessageCircle, Share2, Download, Star, Truck, ShieldCheck, BadgePercent } from "lucide-react";
+import { Phone, MessageCircle, Share2, Download, Star, Truck, ShieldCheck, BadgePercent, Heart, GitCompare } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { api, formatINR } from "@/lib/api";
+import { api, formatINR, API } from "@/lib/api";
 import { CONTACT, buildWhatsAppLink } from "@/lib/contact";
 import EnquiryForm from "@/components/forms/EnquiryForm";
 import ProductCard from "@/components/product/ProductCard";
+import { useStorage } from "@/lib/storageContext";
+import Seo, { productJsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { toast } from "sonner";
 
 export default function ProductDetail() {
@@ -14,12 +16,19 @@ export default function ProductDetail() {
   const [imgIdx, setImgIdx] = useState(0);
   const [colour, setColour] = useState(null);
   const [size, setSize] = useState(null);
+  const { trackRecent, toggleWishlist, toggleCompare, isWishlisted, isCompared } = useStorage() || {};
 
   useEffect(() => {
     api.get(`/products/${slug}`)
-      .then((r) => { setData(r.data); setImgIdx(0); setColour(r.data.product.colours?.[0] || null); setSize(r.data.product.sizes?.[0] || null); })
+      .then((r) => {
+        setData(r.data);
+        setImgIdx(0);
+        setColour(r.data.product.colours?.[0] || null);
+        setSize(r.data.product.sizes?.[0] || null);
+        trackRecent?.(r.data.product.id);
+      })
       .catch(() => setData({ notFound: true }));
-  }, [slug]);
+  }, [slug, trackRecent]);
 
   if (!data) return <div className="container-wodmin py-20 text-center text-brand-mocha">Loading…</div>;
   if (data.notFound) return <div className="container-wodmin py-20 text-center">Product not found. <Link className="text-brand-terracotta" to="/products">Browse products →</Link></div>;
@@ -39,6 +48,21 @@ export default function ProductDetail() {
 
   return (
     <div data-testid="product-detail">
+      <Seo
+        title={p.name}
+        description={p.short_description}
+        image={p.main_image}
+        type="product"
+        jsonLd={[
+          productJsonLd(p),
+          breadcrumbJsonLd([
+            { name: "Home", url: "https://wodmin.in/" },
+            { name: "Products", url: "https://wodmin.in/products" },
+            { name: p.category_name, url: `https://wodmin.in/category/${p.category_slug}` },
+            { name: p.name, url: `https://wodmin.in/product/${p.slug}` },
+          ]),
+        ]}
+      />
       <section className="bg-white">
         <div className="container-wodmin py-8">
           <nav className="text-xs text-brand-mocha">
@@ -132,6 +156,19 @@ export default function ProductDetail() {
               <button onClick={share} className="btn-secondary" data-testid="pdp-share-btn"><Share2 className="h-4 w-4" /> Share</button>
             </div>
 
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => toggleWishlist?.(p.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs transition ${isWishlisted?.(p.id) ? "border-brand-terracotta bg-brand-terracotta text-white" : "border-brand-line bg-white text-brand-walnut hover:border-brand-terracotta"}`}
+                data-testid="pdp-wishlist-btn"
+              ><Heart className={`h-3.5 w-3.5 ${isWishlisted?.(p.id) ? "fill-current" : ""}`} /> {isWishlisted?.(p.id) ? "Wishlisted" : "Save"}</button>
+              <button
+                onClick={() => toggleCompare?.(p.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs transition ${isCompared?.(p.id) ? "border-brand-walnut bg-brand-walnut text-white" : "border-brand-line bg-white text-brand-walnut hover:border-brand-walnut"}`}
+                data-testid="pdp-compare-btn"
+              ><GitCompare className="h-3.5 w-3.5" /> {isCompared?.(p.id) ? "Comparing" : "Compare"}</button>
+            </div>
+
             <div className="mt-6 grid grid-cols-3 gap-3 rounded-2xl border border-brand-line bg-white p-4 text-xs text-brand-walnut">
               <div className="flex flex-col items-start gap-1"><Truck className="h-4 w-4 text-brand-terracotta" /> Free delivery</div>
               <div className="flex flex-col items-start gap-1"><ShieldCheck className="h-4 w-4 text-brand-terracotta" /> {p.warranty}</div>
@@ -139,9 +176,9 @@ export default function ProductDetail() {
             </div>
 
             <div className="mt-6 flex flex-wrap gap-2 text-sm">
-              <button onClick={() => toast.message("Catalogue download coming soon")} className="inline-flex items-center gap-1.5 text-brand-terracotta hover:underline" data-testid="download-catalogue"><Download className="h-4 w-4" /> Download Catalogue</button>
+              <a href={`${API}/catalogue.pdf`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-brand-terracotta hover:underline" data-testid="download-catalogue"><Download className="h-4 w-4" /> Download Catalogue</a>
               <span className="text-brand-line">|</span>
-              <button onClick={() => toast.message("Spec sheet download coming soon")} className="inline-flex items-center gap-1.5 text-brand-terracotta hover:underline" data-testid="download-spec"><Download className="h-4 w-4" /> Specification Sheet</button>
+              <a href={`${API}/products/${p.slug}/pdf`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-brand-terracotta hover:underline" data-testid="download-spec"><Download className="h-4 w-4" /> Specification Sheet</a>
             </div>
           </div>
         </div>
