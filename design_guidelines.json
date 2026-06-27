@@ -1,0 +1,162 @@
+{
+  "project_name": "WODMIN",
+  "domain": "Furniture & Home Solutions Catalogue",
+  "theme": "light",
+  "archetype": "Organic & Earthy",
+  "positioning": "Affordable, Reliable, Modern, Durable",
+  "global_rules": {
+    "no_ecommerce": "CRITICAL: NO shopping cart, checkout, payment, or order placement flows. This is a catalogue and enquiry generation website.",
+    "cta_strategy": "Every product must prominently feature 'Enquire Now', 'WhatsApp', or 'Get Quote' buttons.",
+    "brand_feel": "Friendly, approachable, trustworthy, and modern. Do NOT position as a high-end luxury brand. Needs to appeal to middle-class families, students, and B2B."
+  },
+  "colors": {
+    "background": {
+      "default": "#FDFBF7",
+      "alt": "#F4F0EA"
+    },
+    "surface": {
+      "default": "#FFFFFF",
+      "hover": "#FAFAFA"
+    },
+    "primary": {
+      "default": "#C25934",
+      "hover": "#A64A2B",
+      "light": "#F7EBE7",
+      "description": "Terracotta/Rust - Warmth, approachability, and action."
+    },
+    "secondary": {
+      "default": "#25D366",
+      "hover": "#1EBE5C",
+      "light": "#E9FBF0",
+      "description": "WhatsApp Green - Crucial for immediate, informal B2C/B2B enquiries."
+    },
+    "accent": {
+      "default": "#84937A",
+      "hover": "#6D7A64",
+      "light": "#F0F3EF",
+      "description": "Sage Green - Used for secondary highlights, tags, and 'New Arrival' badges."
+    },
+    "text": {
+      "primary": "#2C2621",
+      "secondary": "#756F68",
+      "inverse": "#FFFFFF"
+    },
+    "border": {
+      "default": "#E5E0D8",
+      "focus": "#C25934"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "heading": "'Outfit', sans-serif",
+      "body": "'DM Sans', sans-serif"
+    },
+    "google_fonts_url": "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-text-primary",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight text-text-primary",
+      "h3": "text-xl sm:text-2xl font-medium text-text-primary",
+      "h4": "text-lg sm:text-xl font-medium text-text-primary",
+      "body": "text-base text-text-secondary leading-relaxed",
+      "small": "text-sm text-text-secondary",
+      "label": "text-xs font-semibold uppercase tracking-[0.15em] text-text-secondary"
+    }
+  },
+  "spacing_and_layout": {
+    "containers": {
+      "section_padding": "py-16 md:py-24",
+      "max_width": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+    },
+    "border_radius": {
+      "card": "rounded-2xl",
+      "button": "rounded-full",
+      "image": "rounded-xl",
+      "badge": "rounded-full"
+    },
+    "shadows": {
+      "card": "shadow-sm hover:shadow-md transition-shadow duration-300",
+      "floating": "shadow-[0_8px_30px_rgb(0,0,0,0.08)]"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-primary-default text-white rounded-full px-6 py-3 font-medium hover:bg-primary-hover transition-colors inline-flex items-center justify-center gap-2",
+      "whatsapp": "bg-[#25D366] text-white rounded-full px-6 py-3 font-medium hover:bg-[#1EBE5C] transition-colors inline-flex items-center justify-center gap-2",
+      "secondary": "bg-surface-default text-text-primary border border-border-default rounded-full px-6 py-3 font-medium hover:bg-surface-hover hover:border-text-secondary transition-colors inline-flex items-center justify-center gap-2",
+      "ghost": "text-primary-default hover:bg-primary-light rounded-full px-4 py-2 font-medium transition-colors"
+    },
+    "product_card": {
+      "structure": "Image on top (aspect-square, rounded-xl, object-cover), Content below.",
+      "content": "Title (h4), Category label, Dimensions/Material summary, and Action area.",
+      "actions": "Full-width 'Enquire Now' button, and an icon-only or half-width 'WhatsApp' button. NO ADD TO CART.",
+      "style": "bg-surface-default p-4 rounded-2xl border border-border-default group hover:border-primary-default transition-all"
+    },
+    "category_tile": {
+      "structure": "Square or rectangular tile, background image with subtle dark gradient overlay, white text on top.",
+      "style": "relative overflow-hidden rounded-2xl group cursor-pointer",
+      "hover": "Image slightly scales up (scale-105 transition-transform duration-500)"
+    },
+    "enquiry_form": {
+      "fields": "Name, Phone Number, Email, Select Product/Category, Message.",
+      "style": "bg-surface-default p-6 md:p-8 rounded-2xl border border-border-default shadow-sm",
+      "inputs": "bg-background-default border border-border-default rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary-default focus:border-transparent outline-none transition-all w-full"
+    },
+    "floating_whatsapp": {
+      "position": "fixed bottom-6 right-6 z-50",
+      "style": "bg-[#25D366] text-white p-4 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center"
+    }
+  },
+  "page_layouts": {
+    "Home": {
+      "hero": "Split layout: Left side bold typography (Tagline + Value Props) and primary Enquire CTA. Right side overlapping rounded images of modern living rooms.",
+      "categories": "Grid of prominent categories (Living Room, Bedroom, Dining, etc.)",
+      "features": "Why Choose Wodmin? (Affordable, Reliable, Durable, Modern) with icons.",
+      "collections": "Carousels for Best Sellers and Budget Collections.",
+      "b2b_banner": "Full-width section calling out Dealers & Wholesalers with a distinctive dark or primary background.",
+      "testimonials": "Carousel of text reviews + customer faces."
+    },
+    "Category_Listing": {
+      "header": "Category title and short description.",
+      "layout": "Sidebar for filters (Price range, Material, Color). Main area for Product Grid.",
+      "grid": "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+    },
+    "Product_Detail": {
+      "layout": "Split layout: Left side Image Gallery (Main image + thumbnails). Right side Details.",
+      "details": "Product Title, SKU, Short Description, Dimensions, Material, Colors available. Large action block: 'Enquire Now' & 'WhatsApp'.",
+      "accordions": "Specifications, Warranty & Care, Delivery Info, FAQs.",
+      "related": "Carousel of related products."
+    },
+    "Wholesale": {
+      "hero": "Focus on B2B benefits: bulk discounts, dedicated support, custom orders.",
+      "form": "Large, detailed enquiry form capturing business type (dealer, builder, corporate)."
+    }
+  },
+  "motion": {
+    "page_transitions": "Fade in with slight upward translation (opacity: 0 -> 1, y: 10 -> 0) using framer-motion.",
+    "hover_states": "Soft scaling (scale 1.02) on product cards and category tiles. Button background color shifts.",
+    "scroll_reveals": "Staggered fade-up for grid items to make the page feel alive and polished."
+  },
+  "media": {
+    "hero_and_living_room": [
+      "https://images.pexels.com/photos/20418771/pexels-photo-20418771.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "https://images.pexels.com/photos/11295890/pexels-photo-11295890.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+    ],
+    "bedroom": [
+      "https://images.unsplash.com/photo-1616594039964-ae9021a400a0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBiZWRyb29tJTIwZnVybml0dXJlfGVufDB8fHx8MTc4MjU1NTEwMnww&ixlib=rb-4.1.0&q=85",
+      "https://images.unsplash.com/photo-1696762932825-2737db830bbe?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBiZWRyb29tJTIwZnVybml0dXJlfGVufDB8fHx8MTc4MjU1NTEwMnww&ixlib=rb-4.1.0&q=85"
+    ],
+    "office": [
+      "https://images.pexels.com/photos/36123565/pexels-photo-36123565.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "https://images.pexels.com/photos/7658310/pexels-photo-7658310.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+    ],
+    "dining": [
+      "https://images.unsplash.com/photo-1568347760450-1ef7874c5f5f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwzfHxkaW5pbmclMjB0YWJsZSUyMG1vZGVybnxlbnwwfHx8fDE3ODI1NTUxMDJ8MA&ixlib=rb-4.1.0&q=85",
+      "https://images.unsplash.com/photo-1610177567940-cad90e9fb85e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwxfHxkaW5pbmclMjB0YWJsZSUyMG1vZGVybnxlbnwwfHx8fDE3ODI1NTUxMDJ8MA&ixlib=rb-4.1.0&q=85"
+    ]
+  },
+  "testing_attributes": {
+    "instruction": "All interactive and key informational elements MUST include a data-testid attribute.",
+    "convention": "kebab-case, role-based. Example: data-testid='enquire-now-button', data-testid='whatsapp-floating-btn', data-testid='product-card-title'."
+  },
+  "instructions_to_main_agent": "1. Initialize Tailwind config with the provided color hexes as CSS variables (e.g. primary, secondary, background, surface, text-primary). 2. Add Google Fonts 'Outfit' and 'DM Sans' to index.html and configure them in Tailwind. 3. Ensure NO e-commerce cart elements are present. 4. Build reusable UI components (Enquiry Form, Product Card without cart buttons) utilizing lucide-react for icons. 5. Prioritize generous spacing (p-6, p-8) and rounded corners (rounded-2xl) to create a friendly, accessible, modern feel."
+}
